@@ -21,6 +21,25 @@ pnpm dev
 
 Open `http://localhost:3000` to view the dashboard foundation.
 
+## Prisma Setup
+
+Set `DATABASE_URL` in `.env` to a local or hosted PostgreSQL database. The `.env.example` file includes only a placeholder database URL.
+
+```bash
+pnpm install
+cp .env.example .env
+pnpm prisma:generate
+pnpm prisma:migrate -- --name init
+pnpm prisma:seed
+```
+
+Useful Prisma commands:
+
+```bash
+pnpm prisma validate
+pnpm prisma studio
+```
+
 ## Project Structure
 
 ```text
@@ -36,6 +55,7 @@ src/
   lib/
 prisma/
   schema.prisma
+  seed.mjs
 ```
 
-This initial version focuses on clean architecture, reusable UI components, responsive dashboard layout, and authentication-ready routing. Payment gateway integration and complex business workflows are intentionally not included yet.
+This initial version focuses on clean architecture, reusable UI components, responsive dashboard layout, Prisma data modeling, and authentication-ready routing. Authentication, payment gateway integration, CRUD pages, and complex business workflows are intentionally not included yet.
