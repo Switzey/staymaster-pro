@@ -9,6 +9,7 @@ datasource db {
 
 enum UserRole {
   OWNER
+  ADMIN
   MANAGER
   FRONT_DESK
   HOUSEKEEPING
@@ -18,6 +19,7 @@ enum UserRole {
 
 enum RoomStatus {
   AVAILABLE
+  RESERVED
   OCCUPIED
   CLEANING
   MAINTENANCE
@@ -27,6 +29,7 @@ enum RoomStatus {
 enum BookingStatus {
   DRAFT
   RESERVED
+  CONFIRMED
   CHECKED_IN
   CHECKED_OUT
   CANCELLED
@@ -37,112 +40,327 @@ enum PaymentStatus {
   PENDING
   PARTIAL
   PAID
+  FAILED
   REFUNDED
   VOID
 }
 
-model User {
-  id           String        @id @default(cuid())
-  email        String        @unique
-  name         String?
-  role         UserRole      @default(STAFF)
-  staffProfile StaffProfile?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+enum PaymentMethod {
+  CASH
+  CARD
+  BANK_TRANSFER
+  MOBILE_MONEY
+  ONLINE
+  OTHER
 }
 
-model StaffProfile {
+enum HousekeepingStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  BLOCKED
+  CANCELLED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  VOID
+  CANCELLED
+}
+
+model Hotel {
   id                String             @id @default(cuid())
-  userId            String             @unique
-  jobTitle          String?
-  department        String?
+  name              String
+  slug              String             @unique
+  legalName         String?
+  email             String?
   phone             String?
-  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  addressLine1      String?
+  addressLine2      String?
+  city              String?
+  state             String?
+  country           String             @default("Nigeria")
+  postalCode        String?
+  users             User[]
+  roomTypes         RoomType[]
+  rooms             Room[]
+  guests            Guest[]
+  bookings          Booking[]
+  payments          Payment[]
+  invoices          Invoice[]
   housekeepingTasks HousekeepingTask[]
+  services          Service[]
+  serviceCharges    ServiceCharge[]
+  auditLogs         AuditLog[]
+  settings          Setting[]
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
+
+  @@index([name])
 }
 
-model Guest {
-  id        String    @id @default(cuid())
-  firstName String
-  lastName  String
-  email     String?
-  phone     String?
-  notes     String?
-  bookings  Booking[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+model User {
+  id                String             @id @default(cuid())
+  hotelId           String?
+  email             String             @unique
+  name              String
+  role              UserRole           @default(STAFF)
+  phone             String?
+  isActive          Boolean            @default(true)
+  hotel             Hotel?             @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+  bookingsCreated   Booking[]          @relation("BookingCreatedBy")
+  paymentsRecorded  Payment[]          @relation("PaymentRecordedBy")
+  housekeepingTasks HousekeepingTask[] @relation("HousekeepingAssignedTo")
+  auditLogs         AuditLog[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([hotelId])
+  @@index([role])
+}
+
+model RoomType {
+  id          String   @id @default(cuid())
+  hotelId     String
+  name        String
+  code        String
+  description String?
+  capacity    Int      @default(1)
+  baseRate    Decimal  @db.Decimal(10, 2)
+  hotel       Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  rooms       Room[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([hotelId, code])
+  @@unique([hotelId, name])
+  @@index([hotelId])
 }
 
 model Room {
   id                String             @id @default(cuid())
-  number            String             @unique
-  name              String?
-  type              String
-  capacity          Int                @default(1)
-  nightlyRate       Decimal            @db.Decimal(10, 2)
+  hotelId           String
+  roomTypeId        String
+  number            String
+  floor             String?
   status            RoomStatus         @default(AVAILABLE)
   notes             String?
+  hotel             Hotel              @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  roomType          RoomType           @relation(fields: [roomTypeId], references: [id], onDelete: Restrict)
   bookings          Booking[]
   housekeepingTasks HousekeepingTask[]
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
+
+  @@unique([hotelId, number])
+  @@index([hotelId, status])
+  @@index([roomTypeId])
+}
+
+model Guest {
+  id             String          @id @default(cuid())
+  hotelId        String
+  firstName      String
+  lastName       String
+  email          String?
+  phone          String?
+  documentNumber String?
+  notes          String?
+  hotel          Hotel           @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  bookings       Booking[]
+  invoices       Invoice[]
+  serviceCharges ServiceCharge[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([hotelId, lastName, firstName])
+  @@index([hotelId, email])
 }
 
 model Booking {
-  id               String        @id @default(cuid())
-  confirmationCode String        @unique
-  guestId          String
-  roomId           String
-  checkInDate      DateTime
-  checkOutDate     DateTime
-  status           BookingStatus @default(RESERVED)
-  adults           Int           @default(1)
-  children         Int           @default(0)
-  guest            Guest         @relation(fields: [guestId], references: [id])
-  room             Room          @relation(fields: [roomId], references: [id])
-  payments         Payment[]
-  invoice          Invoice?
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  id                String             @id @default(cuid())
+  hotelId           String
+  guestId           String
+  roomId            String
+  createdById       String?
+  confirmationCode  String
+  checkInDate       DateTime
+  checkOutDate      DateTime
+  status            BookingStatus      @default(RESERVED)
+  adults            Int                @default(1)
+  children          Int                @default(0)
+  roomRate          Decimal            @db.Decimal(10, 2)
+  totalAmount       Decimal            @db.Decimal(10, 2)
+  notes             String?
+  hotel             Hotel              @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  guest             Guest              @relation(fields: [guestId], references: [id], onDelete: Restrict)
+  room              Room               @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  createdBy         User?              @relation("BookingCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  payments          Payment[]
+  invoice           Invoice?
+  housekeepingTasks HousekeepingTask[]
+  serviceCharges    ServiceCharge[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@unique([hotelId, confirmationCode])
+  @@index([hotelId, status])
+  @@index([guestId])
+  @@index([roomId, checkInDate, checkOutDate])
 }
 
 model Payment {
-  id        String        @id @default(cuid())
-  bookingId String
-  amount    Decimal       @db.Decimal(10, 2)
-  method    String?
-  status    PaymentStatus @default(PENDING)
-  reference String?
-  booking   Booking       @relation(fields: [bookingId], references: [id])
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  id           String        @id @default(cuid())
+  hotelId      String
+  bookingId    String
+  invoiceId    String?
+  recordedById String?
+  amount       Decimal       @db.Decimal(10, 2)
+  method       PaymentMethod
+  status       PaymentStatus @default(PENDING)
+  paidAt       DateTime?
+  reference    String?
+  notes        String?
+  hotel        Hotel         @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  booking      Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  invoice      Invoice?      @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  recordedBy   User?         @relation("PaymentRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@unique([hotelId, reference])
+  @@index([hotelId, status])
+  @@index([bookingId])
+  @@index([invoiceId])
 }
 
 model Invoice {
-  id            String        @id @default(cuid())
-  invoiceNumber String        @unique
-  bookingId     String        @unique
-  subtotal      Decimal       @db.Decimal(10, 2)
-  tax           Decimal       @db.Decimal(10, 2)
-  total         Decimal       @db.Decimal(10, 2)
-  status        PaymentStatus @default(PENDING)
-  booking       Booking       @relation(fields: [bookingId], references: [id])
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id             String          @id @default(cuid())
+  hotelId        String
+  bookingId      String          @unique
+  guestId        String
+  invoiceNumber  String
+  status         InvoiceStatus   @default(DRAFT)
+  issuedAt       DateTime        @default(now())
+  dueAt          DateTime?
+  subtotal       Decimal         @db.Decimal(10, 2)
+  taxAmount      Decimal         @default(0) @db.Decimal(10, 2)
+  discountAmount Decimal         @default(0) @db.Decimal(10, 2)
+  totalAmount    Decimal         @db.Decimal(10, 2)
+  hotel          Hotel           @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  booking        Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  guest          Guest           @relation(fields: [guestId], references: [id], onDelete: Restrict)
+  payments       Payment[]
+  serviceCharges ServiceCharge[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([hotelId, invoiceNumber])
+  @@index([hotelId, status])
+  @@index([guestId])
 }
 
 model HousekeepingTask {
-  id           String        @id @default(cuid())
+  id           String             @id @default(cuid())
+  hotelId      String
   roomId       String
+  bookingId    String?
   assignedToId String?
   title        String
-  status       String        @default("pending")
-  priority     String        @default("normal")
-  dueDate      DateTime?
-  room         Room          @relation(fields: [roomId], references: [id])
-  assignedTo   StaffProfile? @relation(fields: [assignedToId], references: [id])
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  description  String?
+  status       HousekeepingStatus @default(PENDING)
+  priority     String             @default("normal")
+  dueAt        DateTime?
+  completedAt  DateTime?
+  hotel        Hotel              @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  room         Room               @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  booking      Booking?           @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  assignedTo   User?              @relation("HousekeepingAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@index([hotelId, status])
+  @@index([roomId, status])
+  @@index([assignedToId, status])
+}
+
+model Service {
+  id             String          @id @default(cuid())
+  hotelId        String
+  name           String
+  code           String
+  description    String?
+  unitPrice      Decimal         @db.Decimal(10, 2)
+  taxable        Boolean         @default(true)
+  isActive       Boolean         @default(true)
+  hotel          Hotel           @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  serviceCharges ServiceCharge[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([hotelId, code])
+  @@index([hotelId, isActive])
+}
+
+model ServiceCharge {
+  id          String   @id @default(cuid())
+  hotelId     String
+  serviceId   String
+  bookingId   String
+  invoiceId   String?
+  guestId     String?
+  quantity    Int      @default(1)
+  unitPrice   Decimal  @db.Decimal(10, 2)
+  totalAmount Decimal  @db.Decimal(10, 2)
+  notes       String?
+  hotel       Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  service     Service  @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  booking     Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  invoice     Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  guest       Guest?   @relation(fields: [guestId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([hotelId])
+  @@index([serviceId])
+  @@index([bookingId])
+  @@index([invoiceId])
+  @@index([guestId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  hotelId   String?
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  ipAddress String?
+  userAgent String?
+  hotel     Hotel?   @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+
+  @@index([hotelId, createdAt])
+  @@index([userId, createdAt])
+  @@index([entity, entityId])
+}
+
+model Setting {
+  id          String   @id @default(cuid())
+  hotelId     String
+  key         String
+  value       Json
+  description String?
+  hotel       Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([hotelId, key])
+  @@index([hotelId])
 }
