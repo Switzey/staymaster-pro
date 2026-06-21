@@ -1,0 +1,148 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  OWNER
+  MANAGER
+  FRONT_DESK
+  HOUSEKEEPING
+  ACCOUNTANT
+  STAFF
+}
+
+enum RoomStatus {
+  AVAILABLE
+  OCCUPIED
+  CLEANING
+  MAINTENANCE
+  OUT_OF_SERVICE
+}
+
+enum BookingStatus {
+  DRAFT
+  RESERVED
+  CHECKED_IN
+  CHECKED_OUT
+  CANCELLED
+  NO_SHOW
+}
+
+enum PaymentStatus {
+  PENDING
+  PARTIAL
+  PAID
+  REFUNDED
+  VOID
+}
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  name         String?
+  role         UserRole      @default(STAFF)
+  staffProfile StaffProfile?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model StaffProfile {
+  id                String             @id @default(cuid())
+  userId            String             @unique
+  jobTitle          String?
+  department        String?
+  phone             String?
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  housekeepingTasks HousekeepingTask[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+}
+
+model Guest {
+  id        String    @id @default(cuid())
+  firstName String
+  lastName  String
+  email     String?
+  phone     String?
+  notes     String?
+  bookings  Booking[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Room {
+  id                String             @id @default(cuid())
+  number            String             @unique
+  name              String?
+  type              String
+  capacity          Int                @default(1)
+  nightlyRate       Decimal            @db.Decimal(10, 2)
+  status            RoomStatus         @default(AVAILABLE)
+  notes             String?
+  bookings          Booking[]
+  housekeepingTasks HousekeepingTask[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+}
+
+model Booking {
+  id               String        @id @default(cuid())
+  confirmationCode String        @unique
+  guestId          String
+  roomId           String
+  checkInDate      DateTime
+  checkOutDate     DateTime
+  status           BookingStatus @default(RESERVED)
+  adults           Int           @default(1)
+  children         Int           @default(0)
+  guest            Guest         @relation(fields: [guestId], references: [id])
+  room             Room          @relation(fields: [roomId], references: [id])
+  payments         Payment[]
+  invoice          Invoice?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+}
+
+model Payment {
+  id        String        @id @default(cuid())
+  bookingId String
+  amount    Decimal       @db.Decimal(10, 2)
+  method    String?
+  status    PaymentStatus @default(PENDING)
+  reference String?
+  booking   Booking       @relation(fields: [bookingId], references: [id])
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+model Invoice {
+  id            String        @id @default(cuid())
+  invoiceNumber String        @unique
+  bookingId     String        @unique
+  subtotal      Decimal       @db.Decimal(10, 2)
+  tax           Decimal       @db.Decimal(10, 2)
+  total         Decimal       @db.Decimal(10, 2)
+  status        PaymentStatus @default(PENDING)
+  booking       Booking       @relation(fields: [bookingId], references: [id])
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+model HousekeepingTask {
+  id           String        @id @default(cuid())
+  roomId       String
+  assignedToId String?
+  title        String
+  status       String        @default("pending")
+  priority     String        @default("normal")
+  dueDate      DateTime?
+  room         Room          @relation(fields: [roomId], references: [id])
+  assignedTo   StaffProfile? @relation(fields: [assignedToId], references: [id])
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
